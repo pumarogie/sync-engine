@@ -1,0 +1,23 @@
+{
+  "name": "@sync/collab",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "bun build src/index.ts --target bun --outdir dist",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@hocuspocus/extension-redis": "^4.0.0",
+    "@hocuspocus/server": "^4.0.0",
+    "@sync/db": "workspace:*",
+    "@sync/shared": "workspace:*",
+    "drizzle-orm": "^0.45.0",
+    "jose": "^6.1.0",
+    "y-protocols": "^1.0.6",
+    "yjs": "^13.6.27",
+    "zod": "^4.1.0"
+  }
+}
