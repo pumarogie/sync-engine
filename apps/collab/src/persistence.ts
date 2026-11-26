@@ -1,6 +1,6 @@
 import { docSnapshots, docUpdates, nodes, type Db, type Tx } from "@sync/db";
 import type { Extension, onLoadDocumentPayload, onStoreDocumentPayload } from "@hocuspocus/server";
-import { and, asc, count, eq, lte, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
 
 export const COMPACT_AFTER_UPDATES = 25;
@@ -33,40 +33,69 @@ export async function fetchDoc(db: Db | Tx, nodeId: string): Promise<Uint8Array 
   return parts.length ? Y.mergeUpdates(parts) : null;
 }
 
+const lock = (nodeId: string) => sql`SELECT pg_advisory_xact_lock(hashtextextended(${nodeId}, 0))`;
+
+/** Folds a document's updates into its snapshot. Only deletes updates it read, so concurrent appends survive. */
+export async function compactDoc(db: Db, nodeId: string) {
+  await db.transaction(async (tx) => {
+    await tx.execute(lock(nodeId));
+    const [last] = await tx
+      .select({ id: docUpdates.id })
+      .from(docUpdates)
+      .where(eq(docUpdates.nodeId, nodeId))
+      .orderBy(desc(docUpdates.id))
+      .limit(1);
+    if (!last) return;
+    const merged = (await fetchDoc(tx, nodeId))!;
+    await tx
+      .insert(docSnapshots)
+      .values({ nodeId, yjsState: merged, version: 1 })
+      .onConflictDoUpdate({
+        target: docSnapshots.nodeId,
+        set: { yjsState: merged, version: sql`${docSnapshots.version} + 1`, updatedAt: sql`now()` },
+      });
+    await tx.delete(docUpdates).where(and(eq(docUpdates.nodeId, nodeId), lte(docUpdates.id, last.id)));
+  });
+}
+
+const compactions = new Map<string, Promise<void>>();
+
+/** Runs at most one compaction per document per process; storeDoc never waits on it. */
+function scheduleCompaction(db: Db, nodeId: string) {
+  if (compactions.has(nodeId)) return;
+  const run = compactDoc(db, nodeId)
+    .catch((error) => console.error(`[collab] compaction of ${nodeId} failed`, error))
+    .finally(() => compactions.delete(nodeId));
+  compactions.set(nodeId, run);
+}
+
+/** Waits for scheduled compactions (tests, graceful shutdown). */
+export async function drainCompactions() {
+  while (compactions.size) await Promise.all(compactions.values());
+}
+
+const persistedPreview = new WeakMap<Y.Doc, string>();
+
 /**
- * Appends `delta` to doc_updates, compacts into doc_snapshots past the threshold and mirrors the
- * plain-text preview onto nodes (which PowerSync replicates to every client).
+ * Appends `delta` to doc_updates and mirrors the plain-text preview onto nodes (which PowerSync
+ * replicates to every client) only when it changed. Compaction runs in the background.
  */
 export async function storeDoc(db: Db, nodeId: string, doc: Y.Doc, delta: Uint8Array) {
-  await db.transaction(async (tx) => {
-    // Serialise writers per document so compaction never races an append.
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${nodeId}))`);
-    const [{ lastId }] = (await tx
-      .insert(docUpdates)
-      .values({ nodeId, updateBlob: delta })
-      .returning({ lastId: docUpdates.id })) as [{ lastId: number }];
-
-    const [{ pending }] = (await tx.select({ pending: count() }).from(docUpdates).where(eq(docUpdates.nodeId, nodeId))) as [
-      { pending: number },
-    ];
-    if (pending > COMPACT_AFTER_UPDATES) {
-      // Compact from what is persisted, not from memory, so updates from other instances are kept.
-      const merged = await fetchDoc(tx, nodeId);
+  const preview = extractPlainText(doc).slice(0, PREVIEW_LENGTH);
+  const previewChanged = persistedPreview.get(doc) !== preview;
+  const pending = await db.transaction(async (tx) => {
+    await tx.insert(docUpdates).values({ nodeId, updateBlob: delta });
+    if (previewChanged) {
       await tx
-        .insert(docSnapshots)
-        .values({ nodeId, yjsState: merged!, version: 1 })
-        .onConflictDoUpdate({
-          target: docSnapshots.nodeId,
-          set: { yjsState: merged!, version: sql`${docSnapshots.version} + 1`, updatedAt: sql`now()` },
-        });
-      await tx.delete(docUpdates).where(and(eq(docUpdates.nodeId, nodeId), lte(docUpdates.id, lastId)));
+        .update(nodes)
+        .set({ plainTextPreview: preview })
+        .where(and(eq(nodes.id, nodeId), sql`${nodes.plainTextPreview} IS DISTINCT FROM ${preview}`));
     }
-
-    await tx
-      .update(nodes)
-      .set({ plainTextPreview: extractPlainText(doc).slice(0, PREVIEW_LENGTH) })
-      .where(eq(nodes.id, nodeId));
+    const [{ n }] = (await tx.select({ n: count() }).from(docUpdates).where(eq(docUpdates.nodeId, nodeId))) as [{ n: number }];
+    return n;
   });
+  persistedPreview.set(doc, preview);
+  if (pending > COMPACT_AFTER_UPDATES) scheduleCompaction(db, nodeId);
 }
 
 /** Hocuspocus extension: Postgres persistence with append-only deltas and periodic compaction. */
