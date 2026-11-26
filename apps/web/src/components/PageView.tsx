@@ -1,7 +1,7 @@
 import { usePowerSync, useQuery } from "@powersync/react";
 import { compareRank, DEMO_USERS, rankAfter, type DemoUserId } from "@sync/shared";
 import { useEffect, useRef, useState } from "react";
-import { createNode, deleteNode, setProp, updateNode, type NodeRow } from "../data.ts";
+import { createNode, deleteNode, setProp, subscribeDatabaseRows, updateNode, type NodeRow } from "../data.ts";
 import { Editor } from "./Editor.tsx";
 
 type Props = { nodeId: string; userId: DemoUserId; online: boolean; canEdit: boolean; onSelect: (id: string) => void };
@@ -83,6 +83,7 @@ type Column = keyof typeof OPTIONS;
 
 function DatabaseView({ databaseId, workspaceId, canEdit, onSelect }: { databaseId: string; workspaceId: string; canEdit: boolean; onSelect: (id: string) => void }) {
   const db = usePowerSync();
+  useEffect(() => subscribeDatabaseRows(db, databaseId), [db, databaseId]);
   const { data } = useQuery<Node>("SELECT * FROM nodes WHERE parent_id = ? AND kind = 'db_row' AND deleted_at IS NULL", [databaseId]);
   const rows = [...data].sort((a, b) => compareRank({ rank: a.rank!, id: a.id }, { rank: b.rank!, id: b.id }));
 

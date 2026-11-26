@@ -124,6 +124,12 @@ export function tick(): string {
   return packHlc(clock);
 }
 
+/** Keeps database rows for `databaseId` synced while the caller holds the subscription. */
+export function subscribeDatabaseRows(db: AbstractPowerSyncDatabase, databaseId: string): () => void {
+  const pending = db.syncStream("database_rows", { database_id: databaseId }).subscribe();
+  return () => void pending.then((s) => s.unsubscribe());
+}
+
 // ---------- local mutations (instant in SQLite, queued for upload) ----------
 type Db = AbstractPowerSyncDatabase;
 type EditableField = "title" | "icon" | "rank" | "parent_id" | "kind";

@@ -15,8 +15,18 @@ streams:
       SELECT * FROM workspace_members
       WHERE workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.user_id())
 
-  nodes:
+  # Pages and databases: small, needed for the sidebar tree, always synced.
+  sidebar_nodes:
     auto_subscribe: true
     query: |
       SELECT * FROM nodes
-      WHERE workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.user_id())
+      WHERE kind != 'db_row'
+        AND workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.user_id())
+
+  # Database rows: potentially large, synced only while a client has that database open.
+  database_rows:
+    query: |
+      SELECT * FROM nodes
+      WHERE kind = 'db_row'
+        AND parent_id = subscription.parameter('database_id')
+        AND workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.user_id())
