@@ -75,6 +75,8 @@ export const nodes = pgTable(
   (t) => [
     index("nodes_workspace_idx").on(t.workspaceId),
     index("nodes_parent_idx").on(t.parentId),
+    index("nodes_workspace_kind_live_idx").on(t.workspaceId, t.kind).where(sql`${t.deletedAt} IS NULL`),
+    index("nodes_root_space_live_idx").on(t.rootSpaceId).where(sql`${t.deletedAt} IS NULL`),
     check("nodes_kind_ck", sql`${t.kind} in ('page', 'database', 'db_row')`),
     check("nodes_no_self_parent_ck", sql`${t.parentId} is distinct from ${t.id}`),
   ],
@@ -102,11 +104,15 @@ export const docUpdates = pgTable(
   (t) => [index("doc_updates_node_idx").on(t.nodeId, t.id)],
 );
 
-export const processedMutations = pgTable("processed_mutations", {
-  mutationId: text("mutation_id").primaryKey(),
-  userId: text("user_id").notNull(),
-  processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const processedMutations = pgTable(
+  "processed_mutations",
+  {
+    mutationId: text("mutation_id").primaryKey(),
+    userId: text("user_id").notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("processed_mutations_processed_at_idx").on(t.processedAt)],
+);
 
 export type Node = typeof nodes.$inferSelect;
 export type WorkspaceMember = typeof workspaceMembers.$inferSelect;
