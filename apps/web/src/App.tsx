@@ -4,7 +4,7 @@ import { DEMO_USERS, type DemoUserId, type Role } from "@sync/shared";
 import { useEffect, useState } from "react";
 import { PageView } from "./components/PageView.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
-import { Connector, openDatabase } from "./data.ts";
+import { Connector, followRemoteClock, openDatabase } from "./data.ts";
 
 const USER_IDS = Object.keys(DEMO_USERS) as DemoUserId[];
 const databases = new Map<DemoUserId, PowerSyncDatabase>();
@@ -30,6 +30,7 @@ export function App() {
     if (online) db.connect(new Connector(userId));
     return () => void db.disconnect();
   }, [db, userId, online]);
+  useEffect(() => followRemoteClock(db), [db]);
 
   return (
     <PowerSyncContext.Provider value={db}>

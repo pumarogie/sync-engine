@@ -8,7 +8,7 @@ import {
   type AbstractPowerSyncDatabase,
   type PowerSyncBackendConnector,
 } from "@powersync/web";
-import { nextHlc, packHlc, type DemoUserId, type Hlc, type NodeKind, type TokenResponse, type UploadResult } from "@sync/shared";
+import { persistentClock, type DemoUserId, type NodeKind, type TokenResponse, type UploadResult } from "@sync/shared";
 
 export const POWERSYNC_URL = import.meta.env.VITE_POWERSYNC_URL ?? `http://${location.hostname}:8080`;
 export const COLLAB_URL = import.meta.env.VITE_COLLAB_URL ?? `ws://${location.hostname}:1234`;
@@ -60,7 +60,7 @@ const nodes = new Table(
     updated_at: column.text,
   },
   // Previous values give the server a merge base, so concurrent edits to different fields both survive.
-  { indexes: { by_workspace: ["workspace_id"], by_parent: ["parent_id"] }, trackPrevious: true, ignoreEmptyUpdates: true },
+  { indexes: { by_workspace: ["workspace_id"], by_parent: ["parent_id"], by_hlc: ["hlc_updated_at"] }, trackPrevious: true, ignoreEmptyUpdates: true },
 );
 
 export const schema = new Schema({ workspaces, workspace_members, nodes });
@@ -118,10 +118,24 @@ const HLC_NODE = (() => {
   localStorage.setItem(key, id);
   return id;
 })();
-let clock: Hlc = { ts: 0, counter: 0, node: HLC_NODE };
-export function tick(): string {
-  clock = nextHlc(clock);
-  return packHlc(clock);
+const clock = persistentClock(localStorage, HLC_NODE);
+export const tick = () => clock.tick();
+
+/** Advances the local clock past the newest synced write, so lagging wall clocks don't lose LWW ties. */
+export function followRemoteClock(db: AbstractPowerSyncDatabase): () => void {
+  const abort = new AbortController();
+  db.watch(
+    "SELECT max(hlc_updated_at) AS max_hlc FROM nodes",
+    [],
+    {
+      onResult: (r) => {
+        const max = r.rows?._array[0]?.max_hlc;
+        if (max) clock.observe(max);
+      },
+    },
+    { signal: abort.signal },
+  );
+  return () => abort.abort();
 }
 
 /** Keeps database rows for `databaseId` synced while the caller holds the subscription. */

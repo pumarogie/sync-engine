@@ -47,3 +47,30 @@ export function receiveHlc(local: Hlc, remote: Hlc, now: number = Date.now(), ma
 export function compareHlc(a: string, b: string): -1 | 0 | 1 {
   return a < b ? -1 : a > b ? 1 : 0;
 }
+
+export type ClockStorage = { getItem(key: string): string | null; setItem(key: string, value: string): void };
+
+/**
+ * Local HLC that survives reloads and advances past every remote clock it observes, so a device with
+ * a lagging wall clock still produces later timestamps than the writes it has seen.
+ */
+export function persistentClock(storage: ClockStorage, node: string, key = "hlc-clock", maxDriftMs = 5 * 60_000) {
+  const saved = storage.getItem(key);
+  let clock: Hlc = saved && isHlc(saved) ? { ...parseHlc(saved), node } : { ts: 0, counter: 0, node };
+  const set = (next: Hlc) => {
+    clock = next;
+    const packed = packHlc(clock);
+    storage.setItem(key, packed);
+    return packed;
+  };
+  return {
+    tick: (now = Date.now()) => set(nextHlc(clock, now)),
+    /** Merges a remote clock; ignores malformed, already-seen or implausibly-future values. */
+    observe(remote: string, now = Date.now()) {
+      if (!isHlc(remote) || remote <= packHlc(clock)) return;
+      const parsed = parseHlc(remote);
+      if (parsed.ts - now > maxDriftMs) return;
+      set(receiveHlc(clock, parsed, now, maxDriftMs));
+    },
+  };
+}
