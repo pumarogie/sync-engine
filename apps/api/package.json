@@ -1,0 +1,20 @@
+{
+  "name": "@sync/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "bun build src/index.ts --target bun --outdir dist",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@sync/db": "workspace:*",
+    "@sync/shared": "workspace:*",
+    "drizzle-orm": "^0.45.0",
+    "hono": "^4.10.0",
+    "jose": "^6.1.0",
+    "zod": "^4.1.0"
+  }
+}
