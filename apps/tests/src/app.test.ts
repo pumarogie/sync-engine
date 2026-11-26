@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Db } from "@sync/db";
-import { createApp } from "./app.ts";
-import { generateKeys, signToken } from "./auth.ts";
+import { createApp } from "@sync/api/app";
+import { generateKeys, signToken } from "@sync/api/auth";
 
 // These requests are all rejected before touching the database.
 const keys = await generateKeys("app-test");

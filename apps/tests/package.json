@@ -1,0 +1,19 @@
+{
+  "name": "@sync/tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@sync/api": "workspace:*",
+    "@sync/collab": "workspace:*",
+    "@sync/db": "workspace:*",
+    "@sync/shared": "workspace:*",
+    "drizzle-orm": "^0.45.0",
+    "jose": "^6.1.0",
+    "yjs": "^13.6.27"
+  }
+}

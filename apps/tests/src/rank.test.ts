@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { compareRank, rankAfter, rankBefore, rankBetween } from "./rank.ts";
+import { compareRank, rankAfter, rankBefore, rankBetween } from "@sync/shared";
 
 describe("fractional ranks", () => {
   test("before/after/between keep order", () => {

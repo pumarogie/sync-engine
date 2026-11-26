@@ -1,10 +1,10 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { docSnapshots, docUpdates, nodes, workspaces } from "@sync/db";
-import { connectTestDb } from "@sync/db/testing";
+import { connectTestDb } from "./db.ts";
 import { packHlc } from "@sync/shared";
 import { count, eq } from "drizzle-orm";
 import * as Y from "yjs";
-import { COMPACT_AFTER_UPDATES, extractPlainText, fetchDoc, storeDoc } from "./persistence.ts";
+import { COMPACT_AFTER_UPDATES, extractPlainText, fetchDoc, storeDoc } from "@sync/collab/persistence";
 
 function paragraph(doc: Y.Doc, text: string) {
   const p = new Y.XmlElement("paragraph");

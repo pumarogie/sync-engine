@@ -36,6 +36,19 @@
         "zod": "^4.1.0",
       },
     },
+    "apps/tests": {
+      "name": "@sync/tests",
+      "version": "0.0.0",
+      "dependencies": {
+        "@sync/api": "workspace:*",
+        "@sync/collab": "workspace:*",
+        "@sync/db": "workspace:*",
+        "@sync/shared": "workspace:*",
+        "drizzle-orm": "^0.45.0",
+        "jose": "^6.1.0",
+        "yjs": "^13.6.27",
+      },
+    },
     "apps/web": {
       "name": "@sync/web",
       "version": "0.0.0",
@@ -279,6 +292,8 @@
     "@sync/db": ["@sync/db@workspace:packages/db"],
 
     "@sync/shared": ["@sync/shared@workspace:packages/shared"],
+
+    "@sync/tests": ["@sync/tests@workspace:apps/tests"],
 
     "@sync/web": ["@sync/web@workspace:apps/web"],
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createLocalJWKSet, decodeProtectedHeader, jwtVerify, SignJWT } from "jose";
-import { generateKeys, jwks, loadOrCreateKeys, signToken, verifyToken } from "./auth.ts";
+import { generateKeys, jwks, loadOrCreateKeys, signToken, verifyToken } from "@sync/api/auth";
 
 describe("RS256 auth", async () => {
   const keys = await generateKeys("test-kid");

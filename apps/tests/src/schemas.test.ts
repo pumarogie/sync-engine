@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { packHlc } from "./hlc.ts";
-import { crudEntrySchema, uploadBatchSchema } from "./schemas.ts";
+import { crudEntrySchema, packHlc, uploadBatchSchema } from "@sync/shared";
 
 const id = "0190a000-0000-7000-8000-0000000000aa";
 const hlc = packHlc({ ts: 1, counter: 0, node: "n" });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { compareHlc, nextHlc, packHlc, parseHlc, receiveHlc } from "./hlc.ts";
+import { compareHlc, nextHlc, packHlc, parseHlc, receiveHlc } from "@sync/shared";
 
 describe("HLC", () => {
   test("pack/parse round-trips", () => {

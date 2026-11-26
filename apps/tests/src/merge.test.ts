@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { packHlc } from "@sync/shared";
-import { mergeNode, type NodeState } from "./merge.ts";
+import { mergeNode, type NodeState } from "@sync/api/merge";
 
 const h = (ts: number, node = "c") => packHlc({ ts, counter: 0, node });
 const server = (over: Partial<NodeState> = {}): NodeState => ({

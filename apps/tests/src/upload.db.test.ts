@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { nodes, processedMutations, workspaceMembers, workspaces } from "@sync/db";
-import { connectTestDb } from "@sync/db/testing";
+import { connectTestDb } from "./db.ts";
 import { packHlc, rankAfter, type CrudEntry } from "@sync/shared";
 import { eq, inArray, sql } from "drizzle-orm";
-import { applyUpload, wouldCreateCycle } from "./upload.ts";
+import { applyUpload, wouldCreateCycle } from "@sync/api/upload";
 
 const db = await connectTestDb();
 const hlc = (ts: number) => packHlc({ ts, counter: 0, node: "test" });

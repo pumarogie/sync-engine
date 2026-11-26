@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { createDb, type Db } from "./index.ts";
+import { createDb, type Db } from "@sync/db";
 
 /** Connects to the migrated dev/test database, or returns null so DB tests can skip. */
 export async function connectTestDb(): Promise<Db | null> {
