@@ -1,6 +1,6 @@
 import { nodes, processedMutations, workspaceMembers, type Db, type Tx } from "@sync/db";
 import { packHlc, parseHlc, type CrudEntry, type Role, type UploadResult } from "@sync/shared";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { mergeNode, type NodeState } from "./merge.ts";
 
 const MAX_CLOCK_DRIFT_MS = 5 * 60_000;
@@ -194,4 +194,13 @@ export async function applyUpload(db: Db, userId: string, entries: CrudEntry[], 
     }
   });
   return result;
+}
+
+/** Deletes idempotency records older than `olderThanMs`; PowerSync never retries that far back. */
+export async function pruneProcessedMutations(db: Db, olderThanMs: number): Promise<number> {
+  const rows = await db
+    .delete(processedMutations)
+    .where(lt(processedMutations.processedAt, new Date(Date.now() - olderThanMs)))
+    .returning({ id: processedMutations.mutationId });
+  return rows.length;
 }
