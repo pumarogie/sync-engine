@@ -9,6 +9,7 @@ import {
   type PowerSyncBackendConnector,
 } from "@powersync/web";
 import { persistentClock, type DemoUserId, type NodeKind, type TokenResponse, type UploadResult } from "@sync/shared";
+import { SEARCH_OBJECT_COUNT, SEARCH_READY_SQL, SEARCH_SETUP_SQL } from "./search.ts";
 
 export const POWERSYNC_URL = import.meta.env.VITE_POWERSYNC_URL ?? `http://${location.hostname}:8080`;
 export const COLLAB_URL = import.meta.env.VITE_COLLAB_URL ?? `ws://${location.hostname}:1234`;
@@ -136,6 +137,24 @@ export function followRemoteClock(db: AbstractPowerSyncDatabase): () => void {
     { signal: abort.signal },
   );
   return () => abort.abort();
+}
+
+// ---------- local full-text search ----------
+const searchReady = new WeakMap<AbstractPowerSyncDatabase, Promise<void>>();
+
+export function ensureSearchIndex(db: AbstractPowerSyncDatabase): Promise<void> {
+  let ready = searchReady.get(db);
+  if (!ready) {
+    ready = db.waitForReady().then(() =>
+      db.writeTransaction(async (tx) => {
+        const { n } = await tx.get<{ n: number }>(SEARCH_READY_SQL);
+        if (n === SEARCH_OBJECT_COUNT) return;
+        for (const statement of SEARCH_SETUP_SQL) await tx.execute(statement);
+      }),
+    );
+    searchReady.set(db, ready);
+  }
+  return ready;
 }
 
 /** Keeps database rows for `databaseId` synced while the caller holds the subscription. */

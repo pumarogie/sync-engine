@@ -1,7 +1,8 @@
 import { usePowerSync, useQuery } from "@powersync/react";
 import { compareRank, DEMO_USERS, rankAfter, rankBetween, ROLES, type DemoUserId, type NodeKind, type Role } from "@sync/shared";
-import { useMemo, useState } from "react";
-import { api, createNode, deleteNode, getToken, updateNode } from "../data.ts";
+import { useEffect, useMemo, useState } from "react";
+import { api, createNode, deleteNode, ensureSearchIndex, getToken, updateNode } from "../data.ts";
+import { ftsQuery } from "../search.ts";
 
 type TreeNode = { id: string; parent_id: string | null; kind: NodeKind; title: string; icon: string | null; rank: string };
 type Props = {
@@ -24,12 +25,15 @@ export function Sidebar(props: Props) {
      WHERE workspace_id = ? AND deleted_at IS NULL AND kind != 'db_row'`,
     [props.workspace.id],
   );
-  const { data: hits } = useQuery<{ id: string; title: string; kind: NodeKind; plain_text_preview: string | null }>(
-    `SELECT id, title, kind, plain_text_preview FROM nodes
-     WHERE workspace_id = ? AND deleted_at IS NULL AND ? != '' AND (title LIKE ? OR plain_text_preview LIKE ?)
-     ORDER BY title LIMIT 25`,
-    [props.workspace.id, search, `%${search}%`, `%${search}%`],
-  );
+  const [query, setQuery] = useState<string | null>(null);
+  const [indexReady, setIndexReady] = useState(false);
+  useEffect(() => {
+    void ensureSearchIndex(db).then(() => setIndexReady(true));
+  }, [db]);
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(ftsQuery(search)), 120);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const children = useMemo(() => {
     const map = new Map<string | null, TreeNode[]>();
@@ -105,18 +109,11 @@ export function Sidebar(props: Props) {
       <input className="search" placeholder="Search (local SQLite)…" value={search} onChange={(e) => setSearch(e.target.value)} />
 
       {search ? (
-        <div className="tree">
-          {hits.length === 0 && <div className="muted pad">No matches</div>}
-          {hits.map((h) => (
-            <div key={h.id} className="tree-row" onClick={() => props.onSelect(h.id)}>
-              <span className="icon">{KIND_ICON[h.kind]}</span>
-              <span className="label">
-                {h.title || "Untitled"}
-                {h.plain_text_preview && <small>{h.plain_text_preview.slice(0, 60)}</small>}
-              </span>
-            </div>
-          ))}
-        </div>
+        query && indexReady ? (
+          <SearchResults workspaceId={props.workspace.id} query={query} onSelect={props.onSelect} />
+        ) : (
+          <div className="tree muted pad">{query ? "Indexing…" : "No matches"}</div>
+        )
       ) : (
         <div className="tree">{renderLevel(null, 0)}</div>
       )}
@@ -129,6 +126,29 @@ export function Sidebar(props: Props) {
       )}
       <Members userId={props.userId} workspaceId={props.workspace.id} isOwner={props.workspace.role === "owner"} />
     </aside>
+  );
+}
+
+function SearchResults({ workspaceId, query, onSelect }: { workspaceId: string; query: string; onSelect: (id: string) => void }) {
+  const { data: hits } = useQuery<{ id: string; title: string; kind: NodeKind; plain_text_preview: string | null }>(
+    `SELECT n.id, n.title, n.kind, n.plain_text_preview FROM fts_nodes f JOIN nodes n ON n.id = f.id
+     WHERE fts_nodes MATCH ? AND n.workspace_id = ? AND n.deleted_at IS NULL
+     ORDER BY bm25(fts_nodes, 0, 10, 1) LIMIT 25`,
+    [query, workspaceId],
+  );
+  return (
+    <div className="tree">
+      {hits.length === 0 && <div className="muted pad">No matches</div>}
+      {hits.map((h) => (
+        <div key={h.id} className="tree-row" onClick={() => onSelect(h.id)}>
+          <span className="icon">{KIND_ICON[h.kind]}</span>
+          <span className="label">
+            {h.title || "Untitled"}
+            {h.plain_text_preview && <small>{h.plain_text_preview.slice(0, 60)}</small>}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
