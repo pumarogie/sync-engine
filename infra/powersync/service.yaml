@@ -1,0 +1,25 @@
+# PowerSync Service config (self-hosted). Values with !env come from docker-compose.yml.
+replication:
+  connections:
+    - type: postgresql
+      uri: !env PS_DATA_SOURCE_URI
+      sslmode: disable
+
+# Bucket storage in Postgres (no MongoDB).
+storage:
+  type: postgresql
+  uri: !env PS_STORAGE_SOURCE_URI
+  sslmode: disable
+
+port: !env PS_PORT
+
+sync_config:
+  path: sync-config.yaml
+
+# JWTs are minted by apps/api (RS256) and verified against its JWKS endpoint.
+client_auth:
+  jwks_uri: !env PS_JWKS_URL
+  audience: ["powersync"]
+
+telemetry:
+  disable_telemetry_sharing: true

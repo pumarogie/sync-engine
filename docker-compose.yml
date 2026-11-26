@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:18
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_slot_wal_keep_size=1GB", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sync_engine
+    ports: ["${POSTGRES_PORT:-55432}:5432"]
+    volumes:
+      - pg_data:/var/lib/postgresql
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sync_engine"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  powersync:
+    image: journeyapps/powersync-service:latest
+    command: ["start", "-r", "unified"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+      NODE_OPTIONS: --max-old-space-size=1000
+      PS_DATA_SOURCE_URI: postgresql://powersync_role:powersync_pass@postgres:5432/sync_engine
+      PS_STORAGE_SOURCE_URI: postgresql://powersync_storage_user:powersync_storage_pass@postgres:5432/powersync_storage
+      PS_JWKS_URL: http://host.docker.internal:4000/api/auth/jwks
+      PS_PORT: "8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports: ["8080:8080"]
+    volumes:
+      - ./infra/powersync:/config:ro
+
+volumes:
+  pg_data:

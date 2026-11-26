@@ -1,0 +1,22 @@
+# Sync Streams: every stream is scoped to workspaces the authenticated user (JWT sub) belongs to.
+config:
+  edition: 3
+
+streams:
+  workspaces:
+    auto_subscribe: true
+    query: |
+      SELECT * FROM workspaces
+      WHERE id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.user_id())
+
+  workspace_members:
+    auto_subscribe: true
+    query: |
+      SELECT * FROM workspace_members
+      WHERE workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.user_id())
+
+  nodes:
+    auto_subscribe: true
+    query: |
+      SELECT * FROM nodes
+      WHERE workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = auth.user_id())
