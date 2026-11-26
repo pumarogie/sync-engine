@@ -1,0 +1,20 @@
+{
+  "name": "sync-engine",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "bun run --filter '@sync/api' --filter '@sync/collab' --filter '@sync/web' dev",
+    "build": "bun run --filter '*' build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun test",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "db:generate": "bun run --filter @sync/db db:generate",
+    "db:migrate": "bun run --filter @sync/db db:migrate"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0",
+    "typescript": "^5.9.3"
+  }
+}
