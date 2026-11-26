@@ -146,6 +146,17 @@ async function applyEntry(tx: Tx, roles: Roles, userId: string, entry: CrudEntry
   }
 }
 
+/** Locks every row a batch touches in id order, so overlapping concurrent batches cannot deadlock. */
+async function lockRows(tx: Tx, entries: CrudEntry[]) {
+  const ids = new Set<string>();
+  for (const e of entries) {
+    ids.add(e.id);
+    if (e.data?.parent_id) ids.add(e.data.parent_id);
+  }
+  if (ids.size === 0) return;
+  await tx.execute(sql`SELECT id FROM nodes WHERE id IN (${sql.join([...ids].map((id) => sql`${id}::uuid`), sql`, `)}) ORDER BY id FOR UPDATE`);
+}
+
 /** Claims all mutation ids in one statement; returns the ones not processed before. */
 async function claim(tx: Tx, userId: string, entries: CrudEntry[]): Promise<Set<string>> {
   if (entries.length === 0) return new Set();
@@ -165,6 +176,7 @@ async function claim(tx: Tx, userId: string, entries: CrudEntry[]): Promise<Set<
 export async function applyUpload(db: Db, userId: string, entries: CrudEntry[], now = Date.now()): Promise<UploadResult> {
   const result: UploadResult = { applied: [], skipped: [], rejected: [] };
   await db.transaction(async (tx) => {
+    await lockRows(tx, entries);
     const claimed = await claim(tx, userId, entries);
     const roles: Roles = new Map();
     for (const entry of entries) {
