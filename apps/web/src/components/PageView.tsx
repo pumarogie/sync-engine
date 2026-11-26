@@ -1,8 +1,9 @@
 import { usePowerSync, useQuery } from "@powersync/react";
 import { compareRank, DEMO_USERS, rankAfter, type DemoUserId } from "@sync/shared";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createNode, deleteNode, setProp, subscribeDatabaseRows, updateNode, type NodeRow } from "../data.ts";
-import { Editor } from "./Editor.tsx";
+
+const Editor = lazy(() => import("./Editor.tsx").then((m) => ({ default: m.Editor })));
 
 type Props = { nodeId: string; userId: DemoUserId; online: boolean; canEdit: boolean; onSelect: (id: string) => void };
 type Node = NodeRow & { id: string };
@@ -35,7 +36,9 @@ export function PageView({ nodeId, userId, online, canEdit, onSelect }: Props) {
       {node.kind === "database" ? (
         <DatabaseView databaseId={node.id} workspaceId={node.workspace_id!} canEdit={canEdit} onSelect={onSelect} />
       ) : (
-        <Editor key={`${userId}:${node.id}`} nodeId={node.id} userId={userId} online={online} readOnly={!canEdit} />
+        <Suspense fallback={<div className="muted pad">Loading editor…</div>}>
+          <Editor key={`${userId}:${node.id}`} nodeId={node.id} userId={userId} online={online} readOnly={!canEdit} />
+        </Suspense>
       )}
     </article>
   );
