@@ -74,7 +74,7 @@ bun run --filter @sync/api dev
 # 4. PowerSync service (port 8080).
 docker compose up -d powersync
 
-# 5. Collab server (port 1234) and web app (http://localhost:5173), each in its own terminal.
+# 5. Collab server (port 1234) and web app (http://localhost:5180), each in its own terminal.
 bun run --filter @sync/collab dev
 bun run --filter @sync/web dev
 ```
@@ -97,7 +97,7 @@ bun run --filter @sync/web dev
 | --- | --- | --- |
 | `DATABASE_URL` | `postgres://postgres:postgres@localhost:55432/sync_engine` | db, api, collab |
 | `REDIS_URL` | `redis://localhost:6379` (set to empty to run without Redis) | api, collab |
-| `API_PORT` / `COLLAB_PORT` | `4000` / `1234` | api / collab |
+| `API_PORT` / `COLLAB_PORT` / `WEB_PORT` | `4000` / `1234` / `5180` | api / collab / web |
 | `JWKS_URL` | `http://localhost:4000/api/auth/jwks` | collab |
 | `JWT_PRIVATE_JWK` / `JWT_KEY_PATH` | generated into `apps/api/.keys/dev-jwk.json` | api |
 | `POSTGRES_PORT` | `55432` | docker compose |
