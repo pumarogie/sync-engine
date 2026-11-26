@@ -16,8 +16,13 @@ export async function roleIn(tx: Tx | Db, workspaceId: string, userId: string): 
   return row?.role ?? null;
 }
 
-async function assertCanWrite(tx: Tx, workspaceId: string, userId: string) {
-  const role = await roleIn(tx, workspaceId, userId);
+type Roles = Map<string, Promise<Role | null>>;
+
+/** One membership lookup per workspace per upload transaction. */
+async function assertCanWrite(tx: Tx, roles: Roles, workspaceId: string, userId: string) {
+  let pending = roles.get(workspaceId);
+  if (!pending) roles.set(workspaceId, (pending = roleIn(tx, workspaceId, userId)));
+  const role = await pending;
   if (!role || !WRITE_ROLES.includes(role)) throw new Rejection(`role ${role ?? "none"} cannot write workspace ${workspaceId}`);
 }
 
@@ -59,13 +64,13 @@ function assertClock(hlc: string | undefined, now: number): string {
   return hlc;
 }
 
-async function applyEntry(tx: Tx, userId: string, entry: CrudEntry, now: number) {
+async function applyEntry(tx: Tx, roles: Roles, userId: string, entry: CrudEntry, now: number) {
   const [current] = await tx.select().from(nodes).where(eq(nodes.id, entry.id)).for("update");
   const data = entry.data ?? {};
 
   if (entry.op === "DELETE") {
     if (!current) return;
-    await assertCanWrite(tx, current.workspaceId, userId);
+    await assertCanWrite(tx, roles, current.workspaceId, userId);
     const hlc = packHlc({ ts: now, counter: 0, node: "server" });
     await tx.execute(sql`${subtree(entry.id)}
       UPDATE nodes SET deleted_at = now(), hlc_updated_at = ${hlc}, updated_at = now()
@@ -78,7 +83,7 @@ async function applyEntry(tx: Tx, userId: string, entry: CrudEntry, now: number)
   if (!current) {
     if (entry.op === "PATCH") throw new Rejection(`node ${entry.id} not found`);
     if (!data.workspace_id || !data.rank) throw new Rejection("workspace_id and rank are required");
-    await assertCanWrite(tx, data.workspace_id, userId);
+    await assertCanWrite(tx, roles, data.workspace_id, userId);
     const parentId = data.parent_id ?? null;
     const rootSpaceId = await resolveParent(tx, entry.id, data.workspace_id, parentId);
     await tx.insert(nodes).values({
@@ -97,7 +102,7 @@ async function applyEntry(tx: Tx, userId: string, entry: CrudEntry, now: number)
     return;
   }
 
-  await assertCanWrite(tx, current.workspaceId, userId);
+  await assertCanWrite(tx, roles, current.workspaceId, userId);
   if (data.workspace_id && data.workspace_id !== current.workspaceId) throw new Rejection("workspace_id is immutable");
 
   const state: NodeState = {
@@ -141,6 +146,17 @@ async function applyEntry(tx: Tx, userId: string, entry: CrudEntry, now: number)
   }
 }
 
+/** Claims all mutation ids in one statement; returns the ones not processed before. */
+async function claim(tx: Tx, userId: string, entries: CrudEntry[]): Promise<Set<string>> {
+  if (entries.length === 0) return new Set();
+  const rows = await tx
+    .insert(processedMutations)
+    .values(entries.map((e) => ({ mutationId: e.mutationId, userId })))
+    .onConflictDoNothing()
+    .returning({ id: processedMutations.mutationId });
+  return new Set(rows.map((r) => r.id));
+}
+
 /**
  * Applies a PowerSync upload batch in one transaction. Each entry runs in a savepoint: a rejected
  * entry (permissions, cycle, validation) is rolled back and reported, but still recorded in
@@ -149,18 +165,15 @@ async function applyEntry(tx: Tx, userId: string, entry: CrudEntry, now: number)
 export async function applyUpload(db: Db, userId: string, entries: CrudEntry[], now = Date.now()): Promise<UploadResult> {
   const result: UploadResult = { applied: [], skipped: [], rejected: [] };
   await db.transaction(async (tx) => {
+    const claimed = await claim(tx, userId, entries);
+    const roles: Roles = new Map();
     for (const entry of entries) {
-      const claimed = await tx
-        .insert(processedMutations)
-        .values({ mutationId: entry.mutationId, userId })
-        .onConflictDoNothing()
-        .returning({ id: processedMutations.mutationId });
-      if (claimed.length === 0) {
+      if (!claimed.delete(entry.mutationId)) {
         result.skipped.push(entry.mutationId);
         continue;
       }
       try {
-        await tx.transaction((sp) => applyEntry(sp, userId, entry, now));
+        await tx.transaction((sp) => applyEntry(sp, roles, userId, entry, now));
         result.applied.push(entry.mutationId);
       } catch (error) {
         if (!(error instanceof Rejection)) throw error;
