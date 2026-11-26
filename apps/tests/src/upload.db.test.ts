@@ -2,8 +2,11 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { nodes, processedMutations, workspaceMembers, workspaces } from "@sync/db";
 import { connectTestDb } from "./db.ts";
 import { packHlc, rankAfter, type CrudEntry } from "@sync/shared";
-import { eq, inArray, sql } from "drizzle-orm";
-import { applyUpload, wouldCreateCycle } from "@sync/api/upload";
+import { eq, inArray, like, sql } from "drizzle-orm";
+import { applyUpload, pruneProcessedMutations, wouldCreateCycle } from "@sync/api/upload";
+import { schema, type Db } from "@sync/db";
+import { SQL } from "bun";
+import { drizzle } from "drizzle-orm/bun-sql";
 
 const db = await connectTestDb();
 const hlc = (ts: number) => packHlc({ ts, counter: 0, node: "test" });
@@ -118,6 +121,53 @@ describe.skipIf(!db)("applyUpload against Postgres", async () => {
     // Stored as a real jsonb object (what PowerSync replicates), not a double-encoded JSON string.
     const [{ t }] = (await db.execute(sql`SELECT jsonb_typeof(props) AS t FROM nodes WHERE id = ${row}`)) as unknown as [{ t: string }];
     expect(t).toBe("object");
+  });
+
+  test("looks up membership once per workspace per batch", async () => {
+    const queries: string[] = [];
+    const client = new SQL(process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:55432/sync_engine");
+    const logged = drizzle({ client, schema, logger: { logQuery: (q) => queries.push(q) } }) as unknown as Db;
+    try {
+      const ids = Array.from({ length: 10 }, () => crypto.randomUUID());
+      const res = await applyUpload(logged, "alice", ids.map((id, i) => put(id, {}, `bulk-${i}`)));
+      expect(res.applied).toHaveLength(10);
+      expect(queries.filter((q) => q.includes('from "workspace_members"'))).toHaveLength(1);
+      expect(queries.filter((q) => q.includes('insert into "processed_mutations"'))).toHaveLength(1);
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("bulk claim skips processed and duplicate mutation ids", async () => {
+    const fresh = crypto.randomUUID();
+    const res = await applyUpload(db, "alice", [put(a, {}, "a"), put(fresh, {}, "fresh"), put(fresh, { title: "again" }, "fresh")]);
+    expect(res).toEqual({ applied: [mid("fresh")], skipped: [mid("a"), mid("fresh")], rejected: [] });
+    expect((await get(fresh)).title).toBe("t");
+  });
+
+  test("overlapping batches in opposite order do not deadlock", async () => {
+    const x = crypto.randomUUID();
+    const y = crypto.randomUUID();
+    await applyUpload(db, "alice", [put(x, {}, "x"), put(y, {}, "y")]);
+    for (let i = 0; i < 10; i++) {
+      const t = (n: string, id: string) => patch(id, { title: `${n}${i}`, hlc_updated_at: hlc(Date.now()) }, `${n}-${id}-${i}`);
+      const results = await Promise.all([
+        applyUpload(db, "alice", [t("p", x), t("p", y)]),
+        applyUpload(db, "bob", [t("q", y), t("q", x)]),
+      ]);
+      expect(results.flatMap((r) => r.applied)).toHaveLength(4);
+    }
+  });
+
+  test("pruneProcessedMutations drops only old records", async () => {
+    await db.insert(processedMutations).values([
+      { mutationId: mid("old"), userId: "alice", processedAt: new Date(Date.now() - 10 * 86_400_000) },
+      { mutationId: mid("new"), userId: "alice" },
+    ]);
+    expect(await pruneProcessedMutations(db, 7 * 86_400_000)).toBeGreaterThanOrEqual(1);
+    const left = await db.select().from(processedMutations).where(like(processedMutations.mutationId, `${run}:%`));
+    expect(left.some((r) => r.mutationId === mid("old"))).toBe(false);
+    expect(left.some((r) => r.mutationId === mid("new"))).toBe(true);
   });
 
   test("tombstoning a node tombstones its subtree", async () => {
