@@ -7,10 +7,10 @@ import { DEMO_USERS, type DemoUserId } from "@sync/shared";
 import { useEffect, useState } from "react";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
+import { samePeers, type Peer } from "../collab.ts";
 import { COLLAB_URL, getToken } from "../data.ts";
 
 const COLORS: Record<DemoUserId, string> = { alice: "#e8590c", bob: "#1c7ed6", charlie: "#2f9e44" };
-type Peer = { clientId: number; name: string; color: string };
 type Session = { doc: Y.Doc; provider: HocuspocusProvider };
 
 type Props = { nodeId: string; userId: DemoUserId; online: boolean; readOnly: boolean };
@@ -97,12 +97,13 @@ function usePeers(provider: HocuspocusProvider): Peer[] {
   useEffect(() => {
     const awareness = provider.awareness;
     if (!awareness) return;
-    const update = () =>
-      setPeers(
-        [...awareness.getStates().entries()]
-          .filter(([, s]) => s.user)
-          .map(([clientId, s]) => ({ clientId, name: s.user.name as string, color: s.user.color as string })),
-      );
+    // Cursor moves change awareness on every keystroke; only re-render when the peer list changes.
+    const update = () => {
+      const next = [...awareness.getStates().entries()]
+        .filter(([, s]) => s.user)
+        .map(([clientId, s]) => ({ clientId, name: s.user.name as string, color: s.user.color as string }));
+      setPeers((prev) => (samePeers(prev, next) ? prev : next));
+    };
     update();
     awareness.on("change", update);
     return () => awareness.off("change", update);
